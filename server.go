@@ -21,34 +21,34 @@ import(
 )
 
 
-type Word struct{
-	word string
-	meaning string
+type Dict_Word struct{
+	Word string
+	Meaning string
 	//list of words
-	synonyms []*Word
+	Synonyms []*Dict_Word
 	//enum is to be used here for type of the word
-	word_type string
+	Word_type string
 }
 
 type Insert_args struct{
-	word string
-	meaning string
+	Word string
+	Meaning string
 	//string list and type to be defined here
-	synonyms []string
-	word_type string
+	Synonyms []string
+	Word_type string
 }
 
 type Remove_args struct{
-	word string
+	Word string
 	//it could be entire word here
 }
 
 type Lookup_args struct{
-	word string
+	Word string
 }
 
 type Dictionary struct{
-	dictionary map[string]*Word
+	dictionary map[string]*Dict_Word
 	lock sync.Mutex
 	}
 
@@ -66,11 +66,10 @@ func remove_synonyms(dict *Dictionary,syn string, word string){
 
 func (dictionary *Dictionary)InsertWord(args *Insert_args, reply *string) error {
 	//store the arguments into appropriate variables
-	
-	word := args.word
-	meaning := args.meaning
-	synonyms := args.synonyms
-	word_type:= args.word_type
+	word := args.Word
+	meaning := args.Meaning
+	synonyms := args.Synonyms
+	word_type:= args.Word_type
 	var err error
 	err = nil
 	//at this point we have stored all the args into the appropriate variables.
@@ -82,35 +81,36 @@ func (dictionary *Dictionary)InsertWord(args *Insert_args, reply *string) error 
 	} else if otherErrorFound(args) {
 		err = errors.New("OtherServerSideError")
 	} else {
-		dictionary.dictionary[word] = &Word{word:word,meaning:meaning,synonyms:nil,word_type:word_type}
+		
 		err = nil
 		for i:=0;i<len(synonyms);i++{
 			_,ok := dictionary.dictionary[synonyms[i]]
 			if !ok{
 				err = errors.New("OtherServerSideError")
-				delete(dictionary.dictionary,word)
+				
 				break;
 			}
 		}
+		
 		if err == nil{
-			var syn_list []*Word
+			dictionary.dictionary[word] = &Dict_Word{Word:word,Meaning:meaning,Synonyms:nil,Word_type:word_type}
+			var syn_list []*Dict_Word
 			//found,ok = dictionary.dictionary[word]
 			for i:=0;i<len(synonyms);i++{
 				syns:=dictionary.dictionary[synonyms[i]]
-				syns.synonyms=append(dictionary.dictionary[synonyms[i]].synonyms,dictionary.dictionary[word])
+				syns.Synonyms=append(dictionary.dictionary[synonyms[i]].Synonyms,dictionary.dictionary[word])
 				dictionary.dictionary[synonyms[i]]=syns
 				//syn_word,_ := dictionary.dictionary[synonyms[i]]
 				syn_list=append(syn_list,dictionary.dictionary[synonyms[i]])
 				}
-			dictionary.dictionary[word] = &Word{word:word,meaning:meaning,synonyms:syn_list,word_type:word_type}
+			dictionary.dictionary[word] = &Dict_Word{Word:word,Meaning:meaning,Synonyms:syn_list,Word_type:word_type}
 
+			*reply = "Success Inserting "+word
 			}
 		}
 
 		
 	
-	
-
 	//release the lock
 	dictionary.lock.Unlock()
 	return err
@@ -119,7 +119,7 @@ func (dictionary *Dictionary)InsertWord(args *Insert_args, reply *string) error 
 
 func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error {
 	//store the args in appropriate variables
-	word := args.word
+	word := args.Word
 	var err error
 	//get a lock
 	dictionary.lock.Lock()
@@ -130,17 +130,17 @@ func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error 
 		err = errors.New("UnknownWord")
 
 	} else {
-		synonyms := found.synonyms
+		synonyms := found.Synonyms
 		synonyms_exist := true
-		for i:=0; i<len(found.synonyms);i++{
-			_,ok:=dictionary.dictionary[found.synonyms[i].word]
+		for i:=0; i<len(found.Synonyms);i++{
+			_,ok:=dictionary.dictionary[found.Synonyms[i].Word]
 			synonyms_exist = synonyms_exist && ok
 		}
 		if !synonyms_exist{
 			err = errors.New("OtherServerSideError")
 		} else {
-			for i:=0; i<len(found.synonyms);i++{
-				remove_synonyms(dictionary,synonyms[i].word,word)
+			for i:=0; i<len(found.Synonyms);i++{
+				remove_synonyms(dictionary,synonyms[i].Word,word)
 			}
 			delete(dictionary.dictionary,word)
 
@@ -150,6 +150,8 @@ func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error 
 
 	time.Sleep(time.Second*5)
 	//release the lock
+	//word = "Success Removing "+word
+	*reply = "Success Removing "+word
 	dictionary.lock.Unlock()
 	return err
 
@@ -157,21 +159,19 @@ func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error 
 
 func (dictionary * Dictionary)LookupWord(args *Lookup_args, reply *Insert_args) error {
 	//store the args in appropriate variables
-	word := args.word
+	word := args.Word
 	var err error
 	//get a lock
 	dictionary.lock.Lock()
 
 	dict_word,ok := dictionary.dictionary[word]
 	if ok{
-		reply.word = dict_word.word
-		reply.meaning = dict_word.meaning
-		reply.word_type = dict_word.word_type
-		for i:=0;i<len(dict_word.synonyms);i++{
-			reply.synonyms=append(reply.synonyms,dict_word.synonyms[i].word)
+		reply.Word = dict_word.Word
+		reply.Meaning = dict_word.Meaning
+		reply.Word_type = dict_word.Word_type
+		for i:=0;i<len(dict_word.Synonyms);i++{
+			reply.Synonyms=append(reply.Synonyms,dict_word.Synonyms[i].Word)
 		}
-		fmt.Println(reply)
-		fmt.Println("I am inside the lookup")
 		err = nil
 	} else {
 		err = errors.New("UnknownWord")
@@ -191,7 +191,6 @@ func http_listener(){
 	server := rpc.NewServer()
 	server.RegisterName("Dictionary",&dictionary)
 	server.HandleHTTP("/","/debug")
-	//do something here so that we can accept both http and tcp connections
 
 	for true{
 		l, e := net.Listen("tcp", ":6000")
@@ -217,7 +216,6 @@ func tcp_listener(){
 		if e!=nil{
 			log.Fatal("there was an error in listening for connection", e)
 		}
-
 		server.Accept(l)
 	}
 
@@ -226,7 +224,7 @@ func tcp_listener(){
 
 func main() {
 	dictionary = *new(Dictionary)
-	dictionary.dictionary = make(map[string]*Word)
+	dictionary.dictionary = make(map[string]*Dict_Word)
 	fmt.Println(strings.Split("Server is up and running"," "))
 	//start the two threads here
 	go http_listener()
