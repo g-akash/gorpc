@@ -20,6 +20,14 @@ import (
  ) 
 
 
+type WordType uint8
+
+const (
+	Noun WordType = iota + 1
+	Verb
+	Adjective
+)
+
 
 
 type Insert_args struct{
@@ -27,7 +35,7 @@ type Insert_args struct{
 	Meaning string
 	//string list and type to be defined here
 	Synonyms []string
-	Word_type string
+	Word_type WordType
 }
 
 type Remove_args struct{
@@ -42,7 +50,7 @@ type Dictionary struct{
 	client *rpc.Client
 }
 
-func (dictionary *Dictionary)InsertWord(word string, meaning string, synonyms []string, Type string){
+func (dictionary *Dictionary)InsertWord(word string, meaning string, synonyms []string, Type WordType){
 	insert_arg := Insert_args{Word: word, Meaning: meaning, Synonyms: synonyms, Word_type: Type}
 	reply := new(string)
 	async := func(){
@@ -82,7 +90,16 @@ func (dictionary *Dictionary) LookupWord(word string){
 		if err != nil{
 			fmt.Println(err)
 		} else {
-			fmt.Println(*reply)
+			fmt.Print((*reply).Word," ",(*reply).Meaning," ",(*reply).Synonyms)
+			//fmt.Sprintf("%s",(*reply).Word_type)
+			ind:=(*reply).Word_type
+			if ind==1{
+				fmt.Println(" Noun")
+			} else if ind==2{
+				fmt.Println(" Verb")
+			} else if ind==3{
+				fmt.Println(" Adjective")
+			}
 		}
 	}
 	fmt.Println("Operation has been started asynchronously. The result will be available shortly. You can start other operations till then.")
@@ -119,8 +136,18 @@ func main(){
 			} 
 			
 			scanner.Scan()
-			Type := scanner.Text()
-			fmt.Println(word,meaning,synonyms,Type)
+			var Type WordType
+			type_string := scanner.Text()
+			if type_string == "Noun"{
+				Type = Noun
+			} else if type_string == "Verb" {
+				Type = Verb
+			} else if type_string == "Adjective"{
+				Type = Adjective
+			} else {
+				fmt.Println("Wrong type given")
+				continue
+			}
 			dictionary.InsertWord(word,meaning,synonyms,Type)
 
 

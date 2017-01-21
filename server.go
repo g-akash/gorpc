@@ -18,6 +18,15 @@ import(
 	"net/rpc"
 	"net/http"
 	"time"
+	"net/rpc/jsonrpc"
+)
+
+type WordType uint8
+
+const (
+	Noun WordType = iota + 1
+	Verb
+	Adjective
 )
 
 
@@ -27,7 +36,7 @@ type Dict_Word struct{
 	//list of words
 	Synonyms []*Dict_Word
 	//enum is to be used here for type of the word
-	Word_type string
+	Word_type WordType
 }
 
 type Insert_args struct{
@@ -35,7 +44,7 @@ type Insert_args struct{
 	Meaning string
 	//string list and type to be defined here
 	Synonyms []string
-	Word_type string
+	Word_type WordType
 }
 
 type Remove_args struct{
@@ -56,16 +65,31 @@ type Dictionary struct{
 var dictionary Dictionary
 
 func otherErrorFound(args *Insert_args)bool{
+	if args.Meaning=="" || args.Word == ""{
+		return true
+	}
+	if args.Word_type<=0 || args.Word_type>3{
+		return true
+	}
+	
 	return false
 }
 
-func remove_synonyms(dict *Dictionary,syn string, word string){
+func remove_synonyms(dict *Dictionary,word string, syn string){
+	var new_synonyms []*Dict_Word
+	for i:=0; i<len(dict.dictionary[word].Synonyms);i++{
+		if dict.dictionary[word].Synonyms[i].Word!=syn{
+			new_synonyms=append(new_synonyms,dict.dictionary[word].Synonyms[i])
+		}
+	}
+	dict.dictionary[word].Synonyms=new_synonyms
 	return
 }
 
 
 func (dictionary *Dictionary)InsertWord(args *Insert_args, reply *string) error {
 	//store the arguments into appropriate variables
+	fmt.Println("Request arrived for inserting new word ",*args)
 	word := args.Word
 	meaning := args.Meaning
 	synonyms := args.Synonyms
@@ -113,12 +137,18 @@ func (dictionary *Dictionary)InsertWord(args *Insert_args, reply *string) error 
 	
 	//release the lock
 	dictionary.lock.Unlock()
+	if err!=nil{
+		fmt.Println("Final result of the process ",err)
+	} else {
+		fmt.Println("Final result of the process ", *reply)
+	}
 	return err
 }
 
 
 func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error {
 	//store the args in appropriate variables
+	fmt.Println("Request arrived for removing ",*args)
 	word := args.Word
 	var err error
 	//get a lock
@@ -153,12 +183,19 @@ func (dictionary *Dictionary)RemoveWord(args *Remove_args, reply *string) error 
 	//word = "Success Removing "+word
 	*reply = "Success Removing "+word
 	dictionary.lock.Unlock()
+	if err!=nil{
+		fmt.Println("Final result of the process ",err)
+	} else {
+		fmt.Println("Final result of the process ", *reply)
+	}
+
 	return err
 
 }
 
 func (dictionary * Dictionary)LookupWord(args *Lookup_args, reply *Insert_args) error {
 	//store the args in appropriate variables
+	fmt.Println("Request arrived for finding ",*args)
 	word := args.Word
 	var err error
 	//get a lock
@@ -182,25 +219,40 @@ func (dictionary * Dictionary)LookupWord(args *Lookup_args, reply *Insert_args) 
 
 	//release the lock
 	dictionary.lock.Unlock()
+	if err!=nil{
+		fmt.Println("Final result of the process ",err)
+	} else {
+		fmt.Println("Final result of the process ", *reply)
+	}
+
 	return err
 
 }
 
 
 func http_listener(){
+	//fmt.Println(rpc.DefaultRPCPath,"  ",rpc.DefaultDebugPath)
 	server := rpc.NewServer()
 	server.RegisterName("Dictionary",&dictionary)
-	server.HandleHTTP("/","/debug")
+	server.HandleHTTP(rpc.DefaultRPCPath,rpc.DefaultDebugPath)
 
 	for true{
 		l, e := net.Listen("tcp", ":6000")
 		//fmt.Println(l,e)
 		if e != nil {
-			log.Fatal("listen error:", e)
+			log.Fatal("there was an error in listening for http connection on port 6000:", e)
+			return
+		} else {
+		fmt.Println("Started listening for new http connections.")
+		}
+			
+		err := http.Serve(l, nil)
+		if err!=nil{
+			fmt.Println("Error serving connection.")
+			continue
 		}
 
-		http.Serve(l, nil)
-
+		fmt.Println("Serving new connection.")
 	}
 
 }
@@ -210,14 +262,27 @@ func tcp_listener(){
 	server.RegisterName("Dictionary",&dictionary)
 	//do something here so that we can accept both http and tcp connections
 
-	for true{
-		l,e := net.Listen("tcp",":5000")
-		//fmt.Println(l,e)
-		if e!=nil{
-			log.Fatal("there was an error in listening for connection", e)
-		}
-		server.Accept(l)
+	
+	l,e := net.Listen("tcp",":5000")
+	//fmt.Println(l,e)
+	if e!=nil{
+		log.Fatal("there was an error in listening for tcp connection on port 5000:", e)
+		return
+	} else {
+		fmt.Println("Started listening for new tcp connections.")
 	}
+	for true{
+
+		conn, err := l.Accept()
+		fmt.Println("Accepted a new tcp connection")
+		if err != nil{
+			fmt.Println("Cannot serve this connection. Will wait for new connection.")
+			continue
+		}
+		fmt.Println("Serving new connection.")
+		go server.ServeCodec(jsonrpc.NewServerCodec(conn))
+	}
+	
 
 }
 
@@ -225,7 +290,7 @@ func tcp_listener(){
 func main() {
 	dictionary = *new(Dictionary)
 	dictionary.dictionary = make(map[string]*Dict_Word)
-	fmt.Println(strings.Split("Server is up and running"," "))
+	fmt.Println(strings.Split("Starting the server"," "))
 	//start the two threads here
 	go http_listener()
 	go tcp_listener()
@@ -233,35 +298,6 @@ func main() {
 		time.Sleep(time.Second*5)
 	}
 	
-
-	// var reply string
-	// var synonyms []string
-	// var word Insert_args
-	// word = *new(Insert_args)
-	// var iarg Insert_args
-	// iarg = Insert_args{word:"hello",meaning:"ohkay",synonyms:synonyms,word_type:"noun"}
-	// var err error
-	// dictionary.InsertWord(&iarg,&reply)
-	// fmt.Println(word)
-	// synonyms=append(synonyms,"hello")
-	// iarg = Insert_args{word:"new_word",meaning:"ohkay",synonyms:synonyms,word_type:"noun"}
-	// err=dictionary.InsertWord(&iarg,&reply)
-	// fmt.Println(*dictionary.dictionary["hello"],*dictionary.dictionary["new_word"])
-	// var rarg Remove_args
-	// rarg = Remove_args{word:"hello"}
-	// err=dictionary.RemoveWord(&rarg,&reply)
-	// if err!=nil{
-	// 	fmt.Println(err)
-	// }
-	// fmt.Println(reply+"jjjjjjj")
-	// var larg Lookup_args
-	// larg = Lookup_args{word:"new_word"}
-	// err=dictionary.LookupWord(&larg,&word)
-	// if err!=nil{
-	// 	fmt.Println(err)
-	// }
-	// fmt.Println(word)
-	// fmt.Println(dictionary)
 }
 
 
